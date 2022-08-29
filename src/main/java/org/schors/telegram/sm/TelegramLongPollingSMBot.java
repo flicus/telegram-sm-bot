@@ -3,6 +3,7 @@ package org.schors.telegram.sm;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.session.Session;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.statemachine.StateMachine;
@@ -28,7 +29,7 @@ public abstract class TelegramLongPollingSMBot extends TelegramLongPollingSessio
     private StateMachinePersister<String, String, Serializable> persister;
 
     @Autowired
-    private List<SMEvent> smEvents;
+    private ObjectProvider<List<SMEvent>> smEvents;
 
     private SMEvent defaultEvent;
 
@@ -50,8 +51,9 @@ public abstract class TelegramLongPollingSMBot extends TelegramLongPollingSessio
     @SneakyThrows
     @Override
     public void onUpdateReceived(Update update, Optional<Session> session) {
+        List<SMEvent> events = smEvents.getIfAvailable();
         if (session.isPresent()) {
-            SMEvent event = smEvents.stream()
+            SMEvent event = events.stream()
                     .filter(smEvent -> smEvent.matcher().test(update))
                     .sorted((o1, o2) -> o1.order() > o2.order() ? 1 : -1)
                     .findFirst()

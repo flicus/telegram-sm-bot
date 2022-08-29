@@ -4,6 +4,7 @@ package org.schors.telegram.sm;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.framework.ProxyFactoryBean;
 import org.springframework.aop.target.CommonsPool2TargetSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -34,18 +35,20 @@ public class SMConfiguration {
         Exception exception = context.getException();
         log.error("Error in action: ", exception);
     };
+
     @Autowired
-    private List<SMActionBase> smActions;
+    private ObjectProvider<List<SMActionBase>> smActions;
     @Autowired
-    private List<SMEvent> smEvents;
-    @Autowired
-    private List<SMState> smStates;
+    private ObjectProvider<List<SMState>> smStates;
     @Value("${smPoolSize:3}")
     private int smPoolSize;
 
     @Bean(name = "stateMachineTarget")
     @Scope(scopeName = "prototype")
     public StateMachine<String, String> stateMachineTarget() throws Exception {
+
+        List<SMActionBase> actions = smActions.getIfAvailable();
+        List<SMState> states = smStates.getIfAvailable();
 
         Builder<String, String> builder = StateMachineBuilder.builder();
 
@@ -55,22 +58,29 @@ public class SMConfiguration {
 
         builder.configureStates()
                 .withStates()
-                .initial(getInitialState(smStates))
-                .states(smStates.stream()
+                .initial(getInitialState(states))
+                .states(states.stream()
                         .map((state) -> state.getName())
                         .collect(Collectors.toSet()));
 
         StateMachineTransitionConfigurer<String, String> configurer = builder.configureTransitions();
-        for (Action<String, String> action : smActions) {
+        for (Action<String, String> action : actions) {
             SMAction[] annotations = action.getClass().getAnnotationsByType(SMAction.class);
             if (annotations != null) {
                 for (SMAction smAction : annotations) {
-                    configurer
-                            .withExternal()
-                            .source(smAction.source())
-                            .target(smAction.target())
-                            .event(smAction.event())
-                            .action(action, errorAction);
+                    if (smAction.source().equalsIgnoreCase(smAction.target())) {
+                        configurer.withInternal()
+                                .source(smAction.source())
+                                .event(smAction.event())
+                                .action(action, errorAction);
+                    } else {
+                        configurer
+                                .withExternal()
+                                .source(smAction.source())
+                                .target(smAction.target())
+                                .event(smAction.event())
+                                .action(action, errorAction);
+                    }
                 }
             }
         }
